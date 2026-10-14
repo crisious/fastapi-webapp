@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FastAPI Web App</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        margin: 0;
+        background: #0f1115;
+        color: #e6e6e6;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+      h1 { font-weight: 650; margin: 0 0 16px; }
+      .status {
+        display: inline-block; padding: 8px 12px; border-radius: 8px;
+        background: #12331c; color: #4ade80; margin-bottom: 24px; font-size: 14px;
+      }
+      .status.err { background: #331414; color: #f87171; }
+      form { display: flex; gap: 8px; margin: 0 0 24px; }
+      input[type="text"] {
+        flex: 1; padding: 10px 12px; border-radius: 8px;
+        border: 1px solid #232a36; background: #0f1115; color: inherit;
+      }
+      button {
+        cursor: pointer; border: none; border-radius: 6px;
+        padding: 8px 12px; background: #232a36; color: #e6e6e6;
+      }
+      button.primary { background: #2563eb; color: #fff; }
+      button.del:hover { background: #3a1e1e; }
+      ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+      li.item {
+        display: flex; align-items: center; gap: 12px;
+        background: #161a22; padding: 12px 14px; border-radius: 10px; border: 1px solid #232a36;
+      }
+      li.item.done .title { text-decoration: line-through; opacity: 0.55; }
+      .title { flex: 1; }
+      .muted { color: #8a93a3; font-size: 14px; margin-top: 28px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>FastAPI Web App</h1>
+      <div id="app">loading…</div>
+    </main>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/htm@3/dist/htm.js"></script>
+    <script>
+      const h = htm.bind(React.createElement);
+      const { useState, useEffect, useCallback } = React;
+
+      function App() {
+        const [health, setHealth] = useState(null);
+        const [items, setItems] = useState([]);
+        const [title, setTitle] = useState("");
+        const [err, setErr] = useState(null);
+
+        const refresh = useCallback(async () => {
+          try {
+            const [hh, ii] = await Promise.all([
+              fetch("/api/health").then((r) => r.json()),
+              fetch("/api/items").then((r) => r.json()),
+            ]);
+            setHealth(hh);
+            setItems(ii);
+            setErr(null);
+          } catch (e) {
+            setErr(String(e));
+          }
+        }, []);
+
+        useEffect(() => { refresh(); }, [refresh]);
+
+        async function addItem(ev) {
+          ev.preventDefault();
+          if (!title.trim()) return;
+          await fetch("/api/items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: title.trim() }),
+          });
+          setTitle("");
+          refresh();
+        }
+
+        async function toggle(it) {
+          await fetch("/api/items/" + it.id, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: it.title, done: !it.done }),
+          });
+          refresh();
+        }
+
+        async function remove(it) {
+          await fetch("/api/items/" + it.id, { method: "DELETE" });
+          refresh();
+        }
+
+        if (err) {
+          return h`
+            <div class="status err">error: ${err}</div>
+            <button class="primary" onclick=${() => refresh()}>retry</button>
+          `;
+        }
+        if (!health) return "loading…";
+
+        return h`
+          <div class="status">&#9679; ${health.status} — ${health.service} ${health.version}</div>
+          <form onSubmit=${addItem}>
+            <input type="text" value=${title}
+                   onInput=${(e) => setTitle(e.target.value)}
+                   placeholder="Add a task…" autocomplete="off" />
+            <button class="primary" type="submit">Add</button>
+          </form>
+          <ul>
+            ${items.map(
+              (it) => h`
+                <li class=${"item" + (it.done ? " done" : "")}>
+                  <input type="checkbox" checked=${it.done} onChange=${() => toggle(it)} />
+                  <span class="title">${it.title}</span>
+                  <button class="del" onClick=${() => remove(it)}>Delete</button>
+                </li>`
+            )}
+          </ul>
+          <div class="muted">
+            API docs: <a href="/docs" style="color:#7aa2ff">/docs</a>
+            &nbsp;·&nbsp; Health: <a href="/api/health" style="color:#7aa2ff">/api/health</a>
+          </div>
+        `;
+      }
+
+      ReactDOM.createRoot(document.getElementById("app")).render(h`<App />`);
+    </script>
+  </body>
+</html>
